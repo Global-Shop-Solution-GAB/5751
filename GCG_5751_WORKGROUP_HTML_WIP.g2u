@@ -1,0 +1,437 @@
+Program.Sub.ScreenSU.Start
+
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+
+Variable.Global.sWCs.Declare(String)
+Variable.Global.sFQP.Declare(String)
+Variable.Global.sOrigLogo.Declare(String)
+v.Global.iRefresh.Declare(Long)
+
+f.Data.DataTable.Create("WBG",True)
+f.Data.DataTable.AddColumn("WBG","Work_Order_Suffix","String")
+f.Data.DataTable.AddColumn("WBG","Part_Description","String")
+f.Data.DataTable.AddColumn("WBG","Work_Order_Due","String")
+f.Data.DataTable.AddColumn("WBG","Priority","String")
+f.Data.DataTable.AddColumn("WBG","Sequence","String")
+f.Data.DataTable.AddColumn("WBG","Start_Date","String")
+F.Data.DataTable.AddColumn("WBG","Seq_Date_Due","String")
+'f.Data.DataTable.AddColumn("WBG","Completed","String")
+f.Data.DataTable.AddColumn("WBG","Remaining","String")
+f.Data.DataTable.AddColumn("WBG","Employee_In_Process","String")
+f.Data.DataTable.AddColumn("WBG","Current_Op","String")
+'F.Data.DataTable.AddColumn("WBG","Scheduled Start","String")
+
+f.Data.DataTable.Create("CLASS",True)
+f.Data.DataTable.AddColumn("CLASS","PROJECT","STRING")
+F.Data.DataTable.AddColumn("CLASS","DATA","STRING")
+F.Data.DataTable.AddColumn("CLASS","RED","STRING")
+F.Data.DataTable.AddColumn("CLASS","GREEN","STRING")
+F.Data.DataTable.AddColumn("CLASS","ORANGE","STRING")
+F.Data.DataTable.AddColumn("CLASS","YELLOW","STRING")
+F.Data.DataTable.AddColumn("CLASS","MIST","STRING")
+F.Data.DataTable.AddColumn("CLASS","BLUE","STRING")
+F.Data.DataTable.AddColumn("CLASS","GRAY","STRING")
+F.Data.DataTable.AddColumn("CLASS","CYAN","STRING")
+F.Data.DataTable.AddColumn("CLASS","MAGENTA","STRING")
+F.Data.DataTable.AddColumn("CLASS","DATE","DATE",V.Ambient.Date)
+
+F.Data.DataTable.AddRow("CLASS","DATA","<td class="data-cell">","RED","<td class="red-cell">","GREEN","<td class="green-cell">","ORANGE","<td class="orange-cell">","YELLOW","<td class="yellow-cell">","MIST","<td class="mist-cell">","BLUE","<td class="blue-cell">","GRAY","<td class="gray-cell">","CYAN","<td class="cyan-cell">","MAGENTA","<td class="magenta-cell">")
+
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Global.bmulti.Declare(boolean,false)
+
+
+'This is HTML page that displays open jobs by WC defined by a .cfg file that stores the Work Centers that need to be displayed.
+'Included in this program is a maintenance program to add and remove WC's that do not need an html page displayed.
+'Coded by SFF
+'5/1/2015
+
+'Updating the program so that it no longer uses any .cfg files and instead uses GCG_5751_HTML_CONFIG database table. Any existing code that uses the files should be obsolete and unneeded outside documentation puproses.
+'Coded by BCC
+'7/8/2015
+
+'Modified by WAW to allow for multiple work groups to be selected during the maint portion and give different colors
+'WAW
+'09/15/2017
+
+'Complete re-write in to .NET using datatables and a lib file to make this part of a larger single TrueView project
+'Coded by DLF
+'1/11/19 
+
+v.Local.iDays.Declare
+V.Local.iCount.Declare
+v.Local.dDate.Declare
+V.Local.sSql.Declare
+v.Local.sRet.Declare
+v.Local.sRet2.Declare
+
+
+F.Intrinsic.Control.CallSub(extract)
+
+F.ODBC.Connection!COREDB.OPENCOMPANYCONNECTION
+'Switches <> "M" then make html files
+F.Intrinsic.Control.If(V.Caller.Switches,<>,"M")
+	'BUILD A LIST OF WORK CENTERS BASED ON THE WORK GROUPS SELECTED IN TRUEVIEW OPTIONS
+	f.ODBC.Connection!coredb.executeandreturn("select REFRESH_RATE from GCG_5751_HTML_CONFIG where LINE_TYPE = 'P'",v.Local.iDays)
+	f.Intrinsic.Math.Mult(v.Local.iDays,10000,v.Global.iRefresh)
+	'get WorkGroups stored in TrueView options
+	f.Data.DataTable.CreateFromSQL("workgroups","coredb","SELECT Workcenter as Workgroup, Workcenter, Cutoff_Days FROM GCG_5751_HTML_CONFIG WHERE Line_Type = 'W'",True)
+	F.ODBC.Connection!COREDB.Close
+	
+	F.ODBC.Connection!COREDB.OPENCOMPANYCONNECTION
+	'get all the work centers from work groups table
+	f.Data.DataTable.CreateFromSQL("workcenters","coredb","SELECT WORKGROUP, WORKCENTER FROM V_WORKGROUP_LINE",True)
+	F.ODBC.Connection!COREDB.CLOSE
+	'filter
+	f.Data.Linq.Join("INNERJOIN","DATATABLE","WORKGROUPS*!*G","DATATABLE","WORKCENTERS*!*W","G.WORKCENTER = W.WORKGROUP","G.WORKCENTER AS WORKGROUP*!*W.WORKCENTER*!*G.CUTOFF_DAYS","","","","SOURCE",True)
+	
+	f.Data.DataTable.Merge("WORKGROUPS","SOURCE",True,2)	
+	
+	F.ODBC.Connection!COREDB.OPENCOMPANYCONNECTION
+	'CREATE A LIST OF JOBS CURRENTLY IN PROGRESS
+	f.Data.DataTable.CreateFromSQL("WIP","coredb","Select A.job, A.Suffix, A.Employee, B.NAME, A.SEQ, A.JOB_DESC, Cast(A.Start_Time as Time) as Start_Time, A.Start_Date, A.Priority, A.WORKCENTER, A.JOB + A.SUFFIX + A.SEQ AS JSS from v_JOBS_IN_PROCESS_G A left join V_EMPLOYEE_MSTR B on A.EMPLOYEE = B.EMPLOYEE",True)
+	F.ODBC.Connection!COREDB.CLOSE
+	
+	
+	f.Data.Dictionary.createfromdatatable("dcEmp","WIP","JSS","EMPLOYEE",16)
+	F.Data.Dictionary.SetDefaultReturn("dcEmp","")
+	f.Data.Dictionary.createfromdatatable("dcName","WIP","JSS","NAME",16)
+	F.Data.Dictionary.SetDefaultReturn("dcName","")
+	F.Data.Dictionary.createfromdatatable("dcTime","WIP","JSS","Start_Time",16)
+	f.Data.Dictionary.SetDefaultReturn("dcTime","")
+	f.Data.Dictionary.CreateFromDatatable("dcDate","WIP","JSS","Start_Date",16)
+	f.Data.Dictionary.SetDefaultReturn("dcDate","")
+	f.Data.Dictionary.CreateFromDatatable("dcWork","WIP","JSS","WORKCENTER",16)
+	F.Data.Dictionary.SetDefaultReturn("dcWork","")
+
+	
+	f.Data.DataTable.Compute("workgroups","max(cutoff_days)","",v.Local.iDays)
+	
+	'add iDays to today (62 = M, T, W, Th, Fri)
+	f.Intrinsic.Date.DateAddWorkdays(v.Ambient.Date,v.Local.iDays,62,v.Local.dDate)
+
+	
+	F.ODBC.Connection!COREDB.OPENCOMPANYCONNECTION
+	'select the open jobs from APS based on the DueDate
+	'f.Intrinsic.String.Build("select a.JSS, LEFT(a.SEQRES,4) AS WORKGROUP, cast('' as char(5)) as WORKCENTER, a.JOB, a.SFX as SUFFIX, RIGHT(a.JSS,6) AS SEQ, a.DESCR, b.Priority, a.pcsremain as UNITS_OPEN, a.pcscompl as UNITS_COMPLETE, cast(a.duedate as date) as Date_Due, LEFT(B.DESCRIPTION,16) as Part_Description, b.date_due as Job_Due, cast('' as char(5)) as employee, cast('' as char(30)) as name, cast('' as Char(12)) as Start_Time, cast('' as char(12)) as DateStarted,(select top 1 btm FROM APSV3_UBDetail C where C.jss = a.JSS ORDER BY C.BNo ASC) as SortTime from APSV3_JBLINES a left join v_job_header B on a.job = b.job and a.sfx = b.suffix WHERE seqtype = '1' and jobType <> '2' and duedate <= '{0}' and compldate IS NULL",v.Local.dDate.PervasiveDate,v.Local.sSql)
+	
+	f.Intrinsic.String.Build("select a.JSS, a.js, LEFT(a.SEQRES,4) AS WORKGROUP, cast('' as char(5)) as WORKCENTER, a.JOB, a.SFX as SUFFIX, RIGHT(a.JSS,6) AS SEQ, a.DESCR, b.Priority, a.pcsremain as UNITS_OPEN, a.pcscompl as UNITS_COMPLETE, cast(a.duedate as date) as Date_Due, LEFT(B.DESCRIPTION,16) as Part_Description, b.date_due as Job_Due, cast('' as char(5)) as employee, cast('' as char(30)) as name, cast('' as char(12)) as DateStarted from APSV3_JBLINES a left join v_job_header B on a.job = b.job and a.sfx = b.suffix WHERE a.seqtype = '1' and a.jobType <> '2' and a.duedate <= '{0}' and a.compldate IS NULL and b.flag_hold <> 'Y'",v.Local.dDate.PervasiveDate,v.Local.sSql)
+	
+	f.Data.DataTable.CreateFromSQL("APS","coredb",v.Local.sSql,True)
+	
+	f.Data.DataTable.AddColumn("APS","START_TIME","DATETIME")
+
+
+	F.Intrinsic.Control.For(V.Local.iCount,0,v.DataTable.APS.RowCount--,1)
+		F.Intrinsic.String.Build("SELECT TOP 1 BTM FROM APSV3_UBDetail where JSS = '{0}' ORDER BY BNO DESC",V.DataTable.APS(V.Local.iCount).JSS!FIELDVALTRIM,V.Local.sSql)
+		F.ODBC.Connection!COREDB.EXECUTEANDRETURN(V.Local.sSql,V.Local.sRet)
+		f.Intrinsic.Control.If(v.Local.sRet.IsNotNullOrWhiteSpace)
+			f.Data.DataTable.SetValue("APS",v.Local.iCount,"START_TIME",V.Local.sRet)
+		f.Intrinsic.Control.Else
+			
+		f.Intrinsic.Control.EndIf
+'		F.Intrinsic.String.Build("SELECT TOP 1 ETM FROM APSV3_UBDetail where JSS = '{0}' ORDER BY BNO ASC",V.DataTable.APS(V.Local.iCount).JSS!FIELDVALTRIM,V.Local.sSql)
+'		F.ODBC.Connection!COREDB.EXECUTEANDRETURN(V.Local.sSql,V.Local.sRet)
+'		f.Intrinsic.Control.If(v.Local.sRet.IsNotNullOrWhiteSpace)
+'			f.Data.DataTable.SetValue("APS",v.Local.iCount,"START_TIME",V.Local.sRet)
+'		f.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.Next(V.Local.iCount)
+	F.ODBC.Connection!COREDB.CLOSE
+
+
+	f.Data.DataTable.FillFromDictionary("APS","dcEmp","JSS","EMPLOYEE")
+	F.Data.DataTable.FillFromDictionary("APS","dcName","JSS","NAME")
+	'F.Data.DataTable.FillFromDictionary("APS","dcTime","JSS","Start_Time")
+	'f.Data.DataTable.FillFromDictionary("APS","dcDate","JSS","DateStarted")
+	F.Data.DataTable.FillFromDictionary("APS","dcWork","JSS","WORKCENTER")
+	
+	'join together the jobs in process with the workorders from APS
+'	f.Data.Linq.Join("LEFTJOIN","DATATABLE","APS*!*A","DATATABLE","WIP*!*W","A.JSS = W.JSS","A.JOB*!*A.SUFFIX*!*A.PART_DESCRIPTION*!*A.JOB_DUE*!*A.SEQ*!*A.DESCR*!*A.WORKGROUP*!*A.UNITS_OPEN*!*A.UNITS_COMPLETE*!*A.DATE_DUE*!*W.EMPLOYEE*!*W.NAME*!*W.START_TIME*!*W.START_DATE*!*W.WORKCENTER*!*A.PRIORITY","","","","CURRENT_JOBS",True)
+	
+	'filter those jobs by the work groups in TrueView Maintenance
+	f.Data.Linq.Join("INNERJOIN","DATATABLE","SOURCE*!*W","DATATABLE","APS*!*C","W.WORKCENTER = C.WORKGROUP","C.JOB*!*C.SUFFIX*!*C.PART_DESCRIPTION*!*C.JOB_DUE*!*C.SEQ*!*W.WORKGROUP AS GROUP*!*C.WORKGROUP*!*C.UNITS_OPEN*!*C.UNITS_COMPLETE*!*C.DATE_DUE*!*C.EMPLOYEE*!*C.NAME*!*C.START_TIME*!*C.WORKCENTER*!*C.PRIORITY","","","C.JOB_DUE ASC,C.DATE_DUE ASC","FILTERED_JOBS",True)
+
+	
+	F.Intrinsic.Control.CallSub(LoadTable)
+
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_5751_WORKGROUP_HTML_WIP.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	f.Intrinsic.Debug.SetLA(v.Local.sError)
+	F.Intrinsic.Control.End
+Function.Intrinsic.Control.EndIf
+Program.Sub.Main.End
+
+Program.Sub.LoadTable.Start
+F.Intrinsic.Control.SetErrorHandler("LoadTable_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.iCount.Declare
+v.Local.iC.Declare
+v.Local.sFilter.Declare
+v.Local.sSql.Declare
+v.Local.sRet.Declare
+
+
+F.Data.DataTable.AddColumn("FILTERED_JOBS","PROJECT","STRING")
+'Create link between this data and class data in the library
+F.Data.DataTable.SetValue("FILTERED_JOBS",-1,"PROJECT","WBG")
+F.Data.DataTable.SetValue("CLASS",0,"PROJECT","WBG")
+F.Data.DataTable.AddColumn("FILTERED_JOBS","CURRENT_WG","STRING")
+'loop through the workgroups and apply the filter to FILTERED_JOBS 
+f.Intrinsic.Control.If(v.DataTable.FILTERED_JOBS.RowCount,>,0)
+	F.Data.DataView.Create("FILTERED_JOBS","vTemp",22,"","DATE_DUE ASC,JOB_DUE ASC")
+	F.Intrinsic.Control.If(V.DataTable.workgroups.RowCount,>,0)
+		F.Intrinsic.Control.For(V.Local.iCount,0,v.DataTable.workgroups.RowCount--,1)
+
+			
+			f.Intrinsic.String.Build("GROUP = '{0}'",V.DataTable.workgroups(V.Local.iCount).WORKGROUP!FIELDVALSTRING,v.Local.sFilter)
+			f.Data.DataView.SetFilter("FILTERED_JOBS","vTemp",v.Local.sFilter)
+				f.ODBC.Connection!coredb.opencompanyconnection
+				'for each record in the view, get the previous operation and the scheduled start date/time for that sequence.
+				F.Intrinsic.Control.For(V.Local.iC,0,v.DataView.FILTERED_JOBS!vTemp.RowCount--,1)
+					F.Intrinsic.String.Build("SELECT TOP 1 SeqRes FROM APSV3_JBLines where JOB = '{0}' AND SFX = '{1}' AND SEQTYPE = '1' AND ComplDate is NULL ORDER BY SEQ ASC;",V.DataView.FILTERED_JOBS!vTemp(V.Local.ic).JOB!FIELDVALTRIM,V.DataView.FILTERED_JOBS!vTemp(V.Local.ic).SUFFIX!FIELDVALSTRING,V.Local.sSql)
+					f.ODBC.Connection!coredb.executeandreturn(v.Local.sSql,v.Local.sRet)
+					f.Intrinsic.Control.If(v.Local.sRet.IsNotNullOrWhiteSpace)
+						f.Data.DataView.SetValue("FILTERED_JOBS","vTemp",V.Local.iC,"CURRENT_WG",V.Local.sRet)
+					f.Intrinsic.Control.EndIf						
+				F.Intrinsic.Control.Next(V.Local.iC)
+				f.ODBC.Connection!coredb.close
+			f.Intrinsic.Control.If(v.DataTable.TEMP.Exists)
+				f.Data.DataTable.Close("TEMP")
+			f.Intrinsic.Control.EndIf
+			f.Data.DataView.ToDataTable("FILTERED_JOBS","vTemp","TEMP",True)
+			F.Intrinsic.Control.If(V.DataTable.TEMP.RowCount,>,0)
+				f.Intrinsic.Control.CallSub(format_class,"TABLE","TEMP","GROUP",V.DataTable.workgroups(V.Local.iCount).WORKGROUP!FIELDVALSTRING)
+			F.Intrinsic.Control.EndIf
+			
+		f.Intrinsic.Control.Next(v.Local.iCount)
+		
+	F.Intrinsic.Control.EndIf
+	f.Data.DataView.Close("FILTERED_JOBS","vTemp")
+f.Intrinsic.Control.EndIf
+
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("LoadTable_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: New_Script.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	f.Intrinsic.Debug.SetLA(v.Local.sError)
+	F.Intrinsic.Control.End
+Function.Intrinsic.Control.EndIf
+
+Program.Sub.LoadTable.End
+
+
+Program.Sub.Extract.Start
+F.Intrinsic.Control.SetErrorHandler("Extract_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.bExist.Declare(Boolean)
+v.Local.sRet.Declare(String)
+v.Local.sDir.Declare(String)
+
+f.Intrinsic.String.Build("{0}\Custom\5751",v.Caller.GlobalDir,v.Local.sDir)
+f.Intrinsic.File.DirExists(v.Local.sDir,v.Local.bExist)
+f.Intrinsic.Control.If(v.Local.bExist,=,False)
+	f.Intrinsic.File.CreateDir(v.Local.sDir)
+f.Intrinsic.Control.EndIf
+
+'5751 doesn't exit so we need to unzip it
+f.Intrinsic.String.Build("{0}\5751.Zip",v.Caller.GasDir,v.Local.sRet)
+f.Intrinsic.File.Exists(v.Local.sRet,v.Local.bExist)
+f.Intrinsic.Control.If(v.Local.bExist,=,True)
+	f.Automation.Zip.UnZip(v.Local.sRet,v.Local.sDir)
+	F.Intrinsic.File.DeleteFile(V.Local.sRet)
+f.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Extract_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_5751_WORKGROUP_HTML_WIP.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	f.Intrinsic.Debug.SetLA(v.Local.sError)
+	F.Intrinsic.Control.End
+Function.Intrinsic.Control.EndIf
+Program.Sub.Extract.End
+
+Program.Sub.format_class.Start
+F.Intrinsic.Control.SetErrorHandler("Extract_Err")
+F.Intrinsic.Control.ClearErrors
+V.Local.sError.Declare(String)
+v.Local.sTitle.Declare
+V.Local.sWorkGroup.Declare
+
+f.Data.Linq.Join("LEFTJOIN","DATATABLE","CLASS*!*C","DATATABLE","TEMP*!*T","C.PROJECT = T.PROJECT","C.DATA + T.JOB AS JOB*!*T.SUFFIX AS SUFFIX*!*C.DATA + T.PART_DESCRIPTION as Part_Description*!*T.JOB_DUE*!*C.DATA + T.SEQ AS Sequence*!*C.DATA + T.GROUP AS WORKGROUP*!*C.DATA + T.UNITS_OPEN AS Remaining*!*T.DATE_DUE AS DUE_DATE*!*C.DATA + T.EMPLOYEE AS EMPLOYEE*!*C.DATA + T.NAME as Employee_In_Process*!*C.DATA + T.WORKCENTER AS WORKCENTER*!*C.DATA + T.PRIORITY AS PRIORITY*!*C.DATA + T.CURRENT_WG as CURRENT_OP*!*T.START_TIME*!*C.YELLOW*!*C.ORANGE*!*C.RED*!*C.GREEN*!*C.DATE","DUE_DATE ASC","","","TEMP2",True)
+
+'create the title to pass
+f.Intrinsic.String.Build("Dispatch by WorkGroup: {0}",v.DataTable.TEMP(0).WORKGROUP!FIELDVALTRIM,V.Local.sTitle)
+v.Local.sWorkGroup.Set(v.DataTable.TEMP(0).WORKGROUP!FIELDVALTRIM)
+F.Intrinsic.String.Replace(V.Local.sWorkGroup,"*","",V.Local.sWorkGroup)
+
+f.Data.DataTable.Close("TEMP")
+
+F.Data.DataTable.AddColumn("TEMP2","EVAL_DATE","STRING")
+f.Data.DataTable.SetValueFormat("TEMP2",-1,"START_TIME","EVAL_DATE","MM/DD/YYYY")
+f.Data.DataTable.AddExpressionColumn("TEMP2","Seq_Date_Due","STRING","IIF(DUE_DATE = DATE, YELLOW + DUE_DATE,IIF(DUE_DATE < DATE AND DUE_DATE < JOB_DUE,ORANGE + DUE_DATE,IIF(DUE_DATE > JOB_DUE, RED + DUE_DATE,GREEN + DUE_DATE)))")
+f.Data.DataTable.AddExpressionColumn("TEMP2","Work_Order_Due","STRING","IIF(JOB_DUE = DATE, YELLOW + JOB_DUE,IIF(JOB_DUE < DATE, RED + JOB_DUE, GREEN + JOB_DUE))")
+F.Data.DataTable.AddExpressionColumn("TEMP2","Start_Date","STRING","IIF(EVAL_DATE = DATE, GREEN + START_TIME,IIF(EVAL_DATE < DATE AND EVAL_DATE < JOB_DUE AND JOB_DUE >= DATE, ORANGE + START_TIME,IIF(EVAL_DATE < DATE AND JOB_DUE < DATE, RED + START_TIME, IIF(EVAL_DATE > JOB_DUE,RED + START_TIME, GREEN + START_TIME))))")
+F.Data.DataTable.AddExpressionColumn("TEMP2","Work_Order_Suffix","STRING","JOB + '-' + SUFFIX")
+
+f.Data.DataTable.Merge("TEMP2","WBG",True,2)
+f.Data.DataTable.Close("TEMP2")
+
+
+'pass the table and title to the lib file
+f.Intrinsic.Control.CallSub(write_file,"PROGRAM","WBG","TITLE",v.Local.sTitle,"WORKGROUP",v.Local.sWorkGroup)
+
+f.Data.DataTable.DeleteRow("WBG")
+f.Data.DataTable.AcceptChanges("WBG")
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Extract_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_5751_WORKGROUP_HTML_WIP.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	f.Intrinsic.Debug.SetLA(v.Local.sError)
+	F.Intrinsic.Control.End
+Function.Intrinsic.Control.EndIf
+Program.Sub.format_class.End
+
+
+Program.Sub.write_file.Start
+F.Intrinsic.Control.SetErrorHandler("write_file_Err")
+F.Intrinsic.Control.ClearErrors
+V.Local.sError.Declare(String)
+
+v.Local.sFile.Declare
+v.Local.sData.Declare
+v.Local.sHTML.Declare
+v.Local.sDir.Declare
+v.Local.sColumns.Declare
+v.Local.iColumns.Declare
+v.Local.sLineSplit.Declare
+v.Local.sTable.Declare
+v.Local.sRowStart.Declare
+v.Local.sRowEnd.Declare
+v.Local.sTableStart.Declare
+v.Local.sTableEnd.Declare
+v.Local.iCRow.Declare
+v.Local.iCCell.Declare
+
+v.Local.sTable.Set(v.Args.PROGRAM)
+
+
+f.Intrinsic.String.Build("<tr>{0}{1}<td class="Empty">&nbsp;</td>",v.Ambient.NewLine,v.Ambient.Tab,v.Local.sRowStart)
+f.Intrinsic.String.Build("</td>{0}<td class="Last">&nbsp;</td>{0}</tr>",v.Ambient.NewLine,v.Local.sRowEnd)
+'load the template file
+f.Intrinsic.String.Build("{0}\CUSTOM\5751\GCG_5751_WIP_TEMPLATE.html",V.Caller.GlobalDir,V.Local.sFile)
+F.Intrinsic.File.File2String(V.Local.sFile,V.Local.sHTML)
+
+'user should have passed the TITLE and PROGRAM (the program and table should be the same)
+
+'inject the title in to the HTML page
+F.Intrinsic.String.Replace(V.Local.sHTML,"#PAGETITLE#",V.Args.TITLE,V.Local.sHTML)
+
+'get the column count  #COLUMNCOUNT#
+f.Intrinsic.String.Split(v.DataTable.[V.LOCAL.STABLE].FieldNames,"*!*",v.Local.sColumns)
+f.Intrinsic.Math.Add(v.Local.sColumns.UBound,1,v.Local.iColumns)
+'f.Intrinsic.Math.Add(v.Local.iColumns,1,v.Local.iColumns)
+
+'inject in to the HTML page
+f.Intrinsic.String.Replace(v.Local.sHTML,"#COLUMNCOUNT#",V.Local.iColumns,V.Local.sHTML)
+
+
+''add additional rows if the row count exceeds 30
+'f.Intrinsic.Control.If(v.DataTable.[v.Local.sTable].RowCount,>,30)
+'	'f.Intrinsic.Math.Add(v.Local.iColumns,2,v.Local.iColumns)
+'	f.Intrinsic.Control.For(v.Local.iCRow,0,7,1)
+'		f.Intrinsic.String.Build("{0}<tr>",v.Local.sTableStart,v.Local.sTableStart)
+'		f.Intrinsic.Control.For(v.Local.iCCell,1,v.Local.iColumns,1)
+'			f.Intrinsic.String.Build("{0}{1}<td class="data-cell">&nbsp;</td>",v.Local.sTableStart,v.Ambient.NewLine,v.Local.sTableStart)
+'		f.Intrinsic.Control.Next(v.Local.icCell)
+'		f.Intrinsic.String.Build("{0}{1}</tr>{1}",v.Local.sTableStart,v.Ambient.NewLine,v.Local.sTableStart)
+'	f.Intrinsic.Control.Next(v.Local.iCRow)
+'	v.Local.sTableEnd.set(v.Local.sTableStart)
+'f.Intrinsic.Control.Else
+'	v.Local.sTableStart.Set("")
+'	v.Local.sTableEnd.Set("")
+'f.Intrinsic.Control.EndIf
+
+	v.Local.sTableStart.Set("")
+	v.Local.sTableEnd.Set("")
+
+'create the headers  #COLUMNHEADERS#
+f.Intrinsic.String.Build("</td>{0}{1}<td class="data-cell">",v.Ambient.NewLine,v.Ambient.Tab,v.Local.sLineSplit)
+'f.Intrinsic.String.Build("{3}{0}{2}<td class="data-cell">{1}{4}",v.Ambient.NewLine,v.DataTable.[V.LOCAL.STABLE].FieldNames,v.Ambient.Tab,v.Local.sRowStart,v.Local.sRowEnd,V.Local.sColumns)
+f.Intrinsic.String.Build("{2}<td class="data-cell">{0}{1}",v.DataTable.[V.LOCAL.STABLE].FieldNames,"</td>",v.Ambient.Tab,V.Local.sColumns)
+f.Intrinsic.String.Replace(v.Local.sColumns,"*!*",v.Local.sLineSplit,v.Local.sColumns)
+F.Intrinsic.String.Replace(V.Local.sColumns,"_"," ",V.Local.sColumns)
+
+
+f.Intrinsic.String.Build("{1}<td class="Last">&nbsp;</td>{0}</tr>",v.Ambient.NewLine,v.Ambient.Tab,v.Local.sRowEnd)
+
+'Function.Intrinsic.Debug.InvokeDebugger
+'Function.Intrinsic.Debug.Stop
+
+
+'create the body table  #MAINDATA#
+f.Data.DataTable.ExportHTML(V.LOCAL.STABLE,V.DataTable.[V.LOCAL.STABLE].FieldNames,,,True,v.Local.sData)
+f.Intrinsic.String.Replace(v.Local.sData,"<td>&nbsp;</td>","<td class="data-cell"></td>",v.Local.sData)
+f.Intrinsic.String.Replace(v.Local.sData,"<td>","",v.Local.sData)
+'F.Intrinsic.String.Replace(V.Local.sData,"<tr>",V.Local.sRowStart,V.Local.sData)
+'F.Intrinsic.String.Replace(V.Local.sData,"</tr>",v.Local.sRowEnd,v.Local.sData)
+f.Intrinsic.String.Replace(v.Local.sData,"></td>",">&nbsp;</td>",v.Local.sData)
+f.Intrinsic.String.Replace(v.Local.sData,"12:00:00 AM","",v.Local.sData)
+f.Intrinsic.String.Replace(v.Local.sData,":00 A"," A",v.Local.sData)
+f.Intrinsic.String.Replace(v.Local.sData,":00 P"," P",v.Local.sData)
+f.Intrinsic.String.Replace(v.Local.sData,"<table>",v.Local.sTableStart,v.Local.sData)
+f.Intrinsic.String.Replace(v.Local.sData,"</table>",v.Local.sTableEnd,v.Local.sData)
+
+
+'inject the column headers
+f.Intrinsic.String.Replace(v.Local.sHTML,"#COLUMNHEADERS#",V.Local.sColumns,V.Local.sHTML)
+
+'inject the main table in to the HTML page
+f.Intrinsic.String.Replace(v.Local.sHTML,"#MAINDATA#",V.Local.sData,V.Local.sHTML)
+
+'inject the refresh rate
+f.Intrinsic.String.Replace(v.Local.sHTML,"#SLEEP#",V.Global.iRefresh,V.Local.sHTML)
+
+f.Intrinsic.String.Replace(v.Local.sFile,"GCG_5751_WIP_TEMPLATE.HTML","GCG_5751",V.Local.sFile)
+F.Intrinsic.String.Build("{0}_{1}_{2}.HTML",V.Local.sFile,V.Args.WORKGROUP,V.Caller.CompanyCode,V.Local.sFile)
+F.Intrinsic.File.String2File(V.Local.sFile,V.Local.sHTML)
+
+F.Intrinsic.Control.If(V.Caller.Switches,=,"O")
+	F.Intrinsic.Task.ShellExec(0,"OPEN",V.Local.sFile,"","",0)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("write_file_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_5751_WORKGROUP_HTML_WIP.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	f.Intrinsic.Debug.SetLA(v.Local.sError)
+	F.Intrinsic.Control.End
+Function.Intrinsic.Control.EndIf
+Program.Sub.write_file.End
+
+
+
+Program.Sub.Comments.Start
+${$0$}$Test Script$}$SFF$}$7/30/2014 10:28:13 AM
+Program.Sub.Comments.End
+
